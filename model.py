@@ -336,7 +336,7 @@ class AutoEncoder(nn.Module):
         return nn.Sequential(nn.ELU(),
                              Conv2D(C_in, C_out, 3, padding=1, bias=True))
 
-    def encode(self, x, t=1., prior=False):
+    def encode(self, x, t=1., distr=True, prior=False):
         s = self.stem(2 * x - 1.0)
         for cell in self.pre_process:
             s = cell(s)
@@ -361,7 +361,7 @@ class AutoEncoder(nn.Module):
         for n in range(self.num_flows):
             z, log_det = self.nf_cells[n](z, ftr)
         nf_offset += self.num_flows
-        all_q = [dist]
+        all_q = [dist if distr else z]
         dist = Normal(mu=torch.zeros_like(z), log_sigma=torch.zeros_like(z))
         all_p = [dist]
         s = 0
@@ -385,7 +385,7 @@ class AutoEncoder(nn.Module):
                     for n in range(self.num_flows):
                         z, log_det = self.nf_cells[nf_offset + n](z, ftr)
                     nf_offset += self.num_flows
-                    all_q.append(dist)
+                    all_q.append(dist if distr else z)
                     dist = Normal(mu_p, log_sig_p, t)
                     all_p.append(dist)
                 s = cell(s, z)
@@ -400,9 +400,14 @@ class AutoEncoder(nn.Module):
         
     def decode(self, all_q, t=1.):
         scale_ind = 0
-        z = all_q[0]
-        if isinstance(z, Normal):
-            z, _ = z.sample()
+        if all_q[0] is None:
+            num_samples = [(q.mu if isinstance(q, Normal) else q) for q in all_q if q is not None][0].size(0)
+            z0_size = [num_samples] + self.z0_size
+            z = Normal(mu=torch.zeros(z0_size).cuda(), log_sigma=torch.zeros(z0_size).cuda(), temp=t).sample()[0]
+        else:
+            z = all_q[0]
+            if isinstance(z, Normal):
+                z, _ = z.sample()
     
         qs = iter(all_q[1:])
     
