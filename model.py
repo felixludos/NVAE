@@ -355,7 +355,7 @@ class AutoEncoder(nn.Module):
         ftr = self.enc0(s)                            # this reduces the channel dimension
         param0 = self.enc_sampler[idx_dec](ftr)
         mu_q, log_sig_q = torch.chunk(param0, 2, dim=1)
-        dist = Normal(mu_q, log_sig_q)   # for the first approx. posterior
+        dist = Normal(mu_q, log_sig_q, t)   # for the first approx. posterior
         z, _ = dist.sample()
         nf_offset = 0
         for n in range(self.num_flows):
@@ -386,7 +386,7 @@ class AutoEncoder(nn.Module):
                         z, log_det = self.nf_cells[nf_offset + n](z, ftr)
                     nf_offset += self.num_flows
                     all_q.append(dist if distr else z)
-                    dist = Normal(mu_p, log_sig_p, t)
+                    dist = Normal(mu_p, log_sig_p)#, t)
                     all_p.append(dist)
                 s = cell(s, z)
                 idx_dec += 1
