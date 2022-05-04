@@ -18,8 +18,7 @@ def soft_clamp5(x: torch.Tensor):
 
 
 @torch.jit.script
-def sample_normal_jit(mu, sigma):
-    eps = mu.mul(0).normal_()
+def sample_normal_jit(mu, sigma, eps):
     z = eps.mul_(sigma).add_(mu)
     return z, eps
 
@@ -29,14 +28,26 @@ class Normal:
         self.mu = soft_clamp5(mu)
         log_sigma = soft_clamp5(log_sigma)
         self.sigma = torch.exp(log_sigma) + 1e-2      # we don't need this after soft clamp
+        self.eps = None
+        self.old_sigma = self.sigma
         if temp != 1.:
             self.sigma *= temp
 
-    def sample(self):
-        return sample_normal_jit(self.mu, self.sigma)
+    def change_temp(self, temp=1.):
+        self.sigma = self.old_sigma * temp
+
+    def sample(self, eps=None):
+        if eps is None:
+            print(f'generating new noise {self.mu.shape}')
+            eps = self.mu.mul(0).normal_()
+        z, self.eps = sample_normal_jit(self.mu, self.sigma, eps=eps)
+        return z, self.eps
 
     def sample_given_eps(self, eps):
         return eps * self.sigma + self.mu
+
+    def sample_eps(self):
+        return self.mu.mul(0).normal_()
 
     def log_p(self, samples):
         normalized_samples = (samples - self.mu) / self.sigma

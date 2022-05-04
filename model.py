@@ -336,7 +336,17 @@ class AutoEncoder(nn.Module):
         return nn.Sequential(nn.ELU(),
                              Conv2D(C_in, C_out, 3, padding=1, bias=True))
 
-    def encode(self, x, t=1., distr=True, prior=False):
+    @staticmethod
+    def _get_eps(eps_itr=None):
+        if eps_itr is not None:
+            for eps in eps_itr:
+                # print(f'using eps {eps.shape}')
+                yield eps
+        # yield from eps_itr
+        while True:
+            yield None
+
+    def encode(self, x, t=1., distr=True, prior=False, eps_table=None):
         s = self.stem(2 * x - 1.0)
         for cell in self.pre_process:
             s = cell(s)
@@ -351,12 +361,14 @@ class AutoEncoder(nn.Module):
         combiner_cells_enc.reverse()
         combiner_cells_s.reverse()
 
+        eps_table = self._get_eps(eps_table)
+
         idx_dec = 0
         ftr = self.enc0(s)                            # this reduces the channel dimension
         param0 = self.enc_sampler[idx_dec](ftr)
         mu_q, log_sig_q = torch.chunk(param0, 2, dim=1)
         dist = Normal(mu_q, log_sig_q, t)   # for the first approx. posterior
-        z, _ = dist.sample()
+        z, _ = dist.sample(next(eps_table))
         nf_offset = 0
         for n in range(self.num_flows):
             z, log_det = self.nf_cells[n](z, ftr)
@@ -381,7 +393,7 @@ class AutoEncoder(nn.Module):
                     param = self.enc_sampler[idx_dec](ftr)
                     mu_q, log_sig_q = torch.chunk(param, 2, dim=1)
                     dist = Normal(mu_p + mu_q, log_sig_p + log_sig_q, t) if self.res_dist else Normal(mu_q, log_sig_q, t)
-                    z, _ = dist.sample()
+                    z, _ = dist.sample(next(eps_table))
                     for n in range(self.num_flows):
                         z, log_det = self.nf_cells[nf_offset + n](z, ftr)
                     nf_offset += self.num_flows
@@ -398,18 +410,26 @@ class AutoEncoder(nn.Module):
         return all_q
         
         
-    def decode(self, all_q, t=1.):
+    def decode(self, all_q, t=1., eps_table=None):
+        num_samples = None
+        if eps_table is not None:
+            num_samples = eps_table[0].size(0)
+        eps_table = self._get_eps(eps_table)
+
         scale_ind = 0
         if all_q[0] is None:
-            num_samples = [(q.mu if isinstance(q, Normal) else q) for q in all_q if q is not None][0].size(0)
+            if num_samples is None:
+                num_samples = [(q.mu if isinstance(q, Normal) else q) for q in all_q if q is not None][0].size(0)
             z0_size = [num_samples] + self.z0_size
-            z = Normal(mu=torch.zeros(z0_size).cuda(), log_sigma=torch.zeros(z0_size).cuda(), temp=t).sample()[0]
+            z = Normal(mu=torch.zeros(z0_size).cuda(),
+                       log_sigma=torch.zeros(z0_size).cuda(), temp=t).sample(next(eps_table))[0]
         else:
             z = all_q[0]
             if isinstance(z, Normal):
-                z, _ = z.sample()
+                z, _ = z.sample(next(eps_table))
     
         qs = iter(all_q[1:])
+
     
         idx_dec = 0
         s = self.prior_ftr0.unsqueeze(0)
@@ -426,10 +446,10 @@ class AutoEncoder(nn.Module):
                         param = self.dec_sampler[idx_dec - 1](s)
                         mu, log_sigma = torch.chunk(param, 2, dim=1)
                         dist = Normal(mu, log_sigma, t)
-                        z, _ = dist.sample()
+                        z, _ = dist.sample(next(eps_table))
                     else:
                         if isinstance(z, Normal):
-                            z, _ = z.sample()
+                            z, _ = z.sample(next(eps_table))
                 # 'combiner_dec'
                 s = cell(s, z)
                 idx_dec += 1
