@@ -344,9 +344,11 @@ class AutoEncoder(nn.Module):
                 yield eps
         # yield from eps_itr
         while True:
+
             yield None
 
     def encode(self, x, t=1., distr=True, prior=False, eps_table=None):
+        # torch.manual_seed(101)
         s = self.stem(2 * x - 1.0)
         for cell in self.pre_process:
             s = cell(s)

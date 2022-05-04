@@ -19,7 +19,7 @@ def soft_clamp5(x: torch.Tensor):
 
 @torch.jit.script
 def sample_normal_jit(mu, sigma, eps):
-    z = eps.mul_(sigma).add_(mu)
+    z = eps.mul(sigma).add_(mu)
     return z, eps
 
 
@@ -38,8 +38,8 @@ class Normal:
 
     def sample(self, eps=None):
         if eps is None:
-            print(f'generating new noise {self.mu.shape}')
-            eps = self.mu.mul(0).normal_()
+            # print(f'generating new noise {self.mu.shape}')
+            eps = self.sample_eps()
         z, self.eps = sample_normal_jit(self.mu, self.sigma, eps=eps)
         return z, self.eps
 
