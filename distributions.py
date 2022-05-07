@@ -46,8 +46,9 @@ class Normal:
     def sample_given_eps(self, eps):
         return eps * self.sigma + self.mu
 
-    def sample_eps(self):
-        return self.mu.mul(0).normal_()
+    def sample_eps(self, gen=None):
+        return torch.randn(*self.mu.shape, device=self.mu.device, generator=gen)
+        # return self.mu.mul(0).normal_()
 
     def log_p(self, samples):
         normalized_samples = (samples - self.mu) / self.sigma
