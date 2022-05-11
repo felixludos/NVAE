@@ -26,8 +26,8 @@ from omnilearn import util
 from plethora import datasets, tasks, framework as fm
 from plethora.framework import export, load_export
 
-_p = os.getenv('PLETHORA_PATH')
-print(f'loaded conditional_eval {_p}')
+# _p = os.getenv('PLETHORA_PATH')
+# print(f'loaded conditional_eval {_p} {fm.Rooted._DEFAULT_MASTER_ROOT}')
 
 @fig.Script('gen')
 def simple_generation(A):
@@ -38,17 +38,25 @@ def simple_generation(A):
 def linear_optimize(A):
 	device = A.pull('device', 'cuda' if torch.cuda.is_available() else 'cpu')
 	pbar = tqdm if A.pull('pbar', False) else None
+	extra = A.pull('extra', '')
 
 	dname = A.pull('dataset', 'mnist')
 
 	enc_name = A.pull('encoder', 'flat')
+	cycles = A.pull('cycles', 0)
 
 	root = A.pull('root', str(fm.Rooted.get_root()/'runs'))
 	root = Path(root)
 	if not root.exists():
 		os.makedirs(str(root))
 
-	run_name = A.pull('name', f'{dname}_{enc_name}')
+	run_name = f'{dname}_{enc_name}'
+	if cycles > 0:
+		run_name += f'r{cycles}'
+	if len(extra):
+		run_name = f'{run_name}_{extra}'
+
+	run_name = A.pull('name', run_name)
 	run_name = f'{run_name}_{get_now()}'
 	offset = len(list(root.glob(f'{run_name}*')))
 	if offset > 0:
@@ -86,6 +94,9 @@ def linear_optimize(A):
 	else:
 		encoder = None
 		din = dataset.observation_space.shape.numel()
+	if encoder is not None and cycles > 0:
+		encoder = ResponseModel(encoder, cycles=cycles)
+		print('Using response model')
 
 	model_config = A.pull('model', None, raw=True)
 	if model_config is None:
@@ -97,6 +108,7 @@ def linear_optimize(A):
 
 	print(model)
 	print(f'Number of parameters: {util.count_parameters(model)}')
+	writer.add_text('model-str', str(model))
 
 	lr = A.pull('lr', 0.001)
 	l2 = A.pull('l2', 0.0001)
@@ -121,8 +133,11 @@ def linear_optimize(A):
 	ckpt_step = A.pull('ckpt-step', 100)
 	eta = 1 / A.pull('stat-eta', train_step)
 
+	seed = A.pull('seed', 67280421310721)
+
 	def checkpoint(i, **stats):
 		export({
+			'seed': seed,
 			'iteration': i,
 			'model_state_dict': model.state_dict(),
 			'optimizer_state_dict': optimizer.state_dict(),
@@ -142,7 +157,8 @@ def linear_optimize(A):
 	trainloss = None
 	valloss = None
 
-	with fm.using_rng(seed=A.pull('seed', 67280421310721)):
+
+	with fm.using_rng(seed=seed):
 		trainset, valset = dataset.split([None, 0.1], shuffle=True)
 
 		for i, batch in enumerate(trainset.get_iterator(epochs=A.pull('epochs',2), num_batches=A.pull('budget', None),

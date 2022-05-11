@@ -10,7 +10,7 @@ hidden-width: 64
 
 lr: 0.001
 
-
+device: cpu
 
 # debug
 
