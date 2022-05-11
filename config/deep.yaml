@@ -1,0 +1,8 @@
+parents: [trainbase]
+
+
+model:
+  _type: mlp
+
+  hidden: [128]
+  nonlin: mish

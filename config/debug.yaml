@@ -7,13 +7,6 @@ parents: [d/celeba]
 
 
 
-#model:
-#  _type: mlp
-#
-#  hidden: [128]
-#  nonlin: mish
-
-
 lr: 0.001
 
 

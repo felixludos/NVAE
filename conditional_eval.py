@@ -27,6 +27,8 @@ from plethora import datasets, tasks, framework as fm
 from plethora.framework import export, load_export
 
 
+print('loaded conditional_eval')
+
 @fig.Script('gen')
 def simple_generation(A):
 
