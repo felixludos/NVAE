@@ -1,0 +1,13 @@
+parents: [trainbase]
+
+dataset: celeba_64
+
+epochs: 2
+#budget: 1000
+
+batch-size: 32
+
+train-step: 100
+val-step: 200
+ckpt-step: 5000
+

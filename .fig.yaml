@@ -1,0 +1,10 @@
+
+
+name: nvae
+
+#py_info: omnilearn/_info.py
+
+
+src:
+  - conditional_eval.py
+

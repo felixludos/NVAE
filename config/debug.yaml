@@ -1,0 +1,33 @@
+
+
+parents: [d/celeba]
+
+
+#ckpt-step: 5
+
+
+
+#model:
+#  _type: mlp
+#
+#  hidden: [128]
+#  nonlin: mish
+
+
+lr: 0.001
+
+
+
+# debug
+
+train-step: 10
+val-step: 10
+
+#batch-size: 16
+
+pbar: yes
+name: 'test'
+
+
+
+

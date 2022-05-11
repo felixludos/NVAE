@@ -10,10 +10,35 @@ from sklearn import mixture
 
 
 class Controller(nn.Module):
-	def __init__(self, encode, decode, **kwargs):
+	def __init__(self, encoder, decoder, batch_size=None, **kwargs):
 		super().__init__()
-		self.encode = encode
-		self.decode = decode
+		self.encoder = encoder
+		self.decoder = decoder
+		self.batch_size = batch_size
+
+
+	def encode(self, X):
+		if self.batch_size is not None and len(X) > self.batch_size:
+			zs = []
+			for x in X.split(self.batch_size):
+				zs.append(self.encoder.encode(x))
+			Z = [torch.cat(vs) for vs in zip(*zs)] if isinstance(zs[0], list) else torch.cat(zs)
+		else:
+			Z = self.encoder.encode(X)
+		return Z
+
+
+	def decode(self, Z):
+		is_list = isinstance(Z, list)
+		z = Z[0] if is_list else Z
+		if self.batch_size is not None and len(z) > self.batch_size:
+			xs = []
+			for z in (zip(*[z.split(self.batch_size) for z in Z]) if is_list else Z.split(self.batch_size)):
+				xs.append(self.decoder.decode(z))
+			X = torch.cat(xs)
+		else:
+			X = self.decoder.decode(Z)
+		return X
 
 
 	def fit_latent(self, Z):
@@ -66,8 +91,8 @@ class LatentResponse(Controller):
 		if nodes is None:
 			nodes = self.NodeBuffer(max_size=max_size)
 		self.nodes = nodes
-		self.nodes.encode = self.encode
-		self.nodes.decode = self.decode
+		# self.nodes.encoder = self.encoder
+		# self.nodes.decoder = self.decoder
 		self.temp = temp
 		self.levels = levels
 		self.only_core = only_core
@@ -111,8 +136,8 @@ class LatentResponse(Controller):
 
 		crit = score[1:].sub(score[:-1])
 		gold = crit.lt(0).prod(0).bool() # strict convergence
-		self.acceptance = gold.float().mean().detach()
 		# gold = score[1:].sub(score[:-1]).mean(0).lt(0).bool() # average convergence
+		self.acceptance = gold.float().mean().detach()
 		picks = cands[gold]
 		self.nodes.score(gold)
 		self.nodes.add(picks)

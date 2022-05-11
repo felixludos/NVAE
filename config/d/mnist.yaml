@@ -1,0 +1,10 @@
+parents: [trainbase]
+
+dataset: mnist
+
+epochs: none
+budget: 1000
+
+batch-size: 256
+
+ckpt-step: 100
