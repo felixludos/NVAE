@@ -1,11 +1,12 @@
 
 
 parents: [d/celeba]
+#parents: [d/celeba, deep]
 
 
 #ckpt-step: 5
 
-
+hidden-width: 64
 
 lr: 0.001
 
