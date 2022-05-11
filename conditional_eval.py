@@ -144,7 +144,7 @@ def linear_optimize(A):
 			**stats,
 		}, name=f'checkpoint{i}', root=path)
 
-	def validate(i, full_epoch=False):
+	def validate(i, key='loss/val', full_epoch=False):
 		with torch.no_grad():
 			val_losses = []
 			for batch in valset.get_iterator(epoch=1, batch_size=batch_size):
@@ -155,7 +155,7 @@ def linear_optimize(A):
 				if not full_epoch:
 					break
 		valloss = torch.as_tensor(val_losses).mean().item()
-		writer.add_scalar('loss/val', valloss, i)
+		writer.add_scalar(key, valloss, i)
 		return valloss
 
 
@@ -195,7 +195,7 @@ def linear_optimize(A):
 					t = get_now('%H:%M:%S')
 					print(f'{t} - it: {i} - {status}')
 
-		valloss = validate(i+1, full_epoch=True)
+		valloss = validate(i+1, key='loss/val-end', full_epoch=True)
 		checkpoint(i+1, val_loss=valloss, train_loss=trainloss)
 
 	writer.close()

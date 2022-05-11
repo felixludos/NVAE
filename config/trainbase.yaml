@@ -2,7 +2,7 @@
 
 _meta.script_name: strain
 
-
+seed: 67280421310737
 
 train-step: 10
 val-step: 10
