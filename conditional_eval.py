@@ -144,16 +144,22 @@ def linear_optimize(A):
 			**stats,
 		}, name=f'checkpoint{i}', root=path)
 
-	def validate(i):
+	def validate(i, full_epoch=False):
 		with torch.no_grad():
-			X, Y = process_batch(valset.get_batch(batch_size=batch_size))
-			y = model(X)
-			valloss = criterion(y, Y).item()
-			writer.add_scalar('loss/val', valloss, i)
+			val_losses = []
+			for batch in valset.get_iterator(epoch=1, batch_size=batch_size):
+				X, Y = process_batch(batch)
+				y = model(X)
+				valloss = criterion(y, Y).item()
+				val_losses.append(valloss)
+				if not full_epoch:
+					break
+		valloss = torch.as_tensor(val_losses).mean().item()
+		writer.add_scalar('loss/val', valloss, i)
 		return valloss
 
 
-	loss = torch.as_tensor(float('nan'))
+	# loss = torch.as_tensor(float('nan'))
 	trainloss = None
 	valloss = None
 
@@ -168,7 +174,7 @@ def linear_optimize(A):
 			if i % val_step == 0:
 				valloss = validate(i)
 			if i>0 and i % ckpt_step == 0:
-				checkpoint(i, val_loss=valloss, train_loss=loss.item())
+				checkpoint(i, val_loss=valloss, train_loss=trainloss)
 
 			optimizer.zero_grad()
 
@@ -186,12 +192,13 @@ def linear_optimize(A):
 				writer.add_scalar('loss/train', trainloss, i)
 				writer.flush()
 				if pbar is None:
-					print(f'it: {i} - {status}')
+					t = get_now('%H:%M:%S')
+					print(f'{t} - it: {i} - {status}')
 
-		valloss = validate(i+1)
-		checkpoint(i+1)
-		writer.close()
+		valloss = validate(i+1, full_epoch=True)
+		checkpoint(i+1, val_loss=valloss, train_loss=trainloss)
 
+	writer.close()
 	return valloss
 
 
