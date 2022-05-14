@@ -19,6 +19,7 @@ import utils
 # import datasets
 
 from controller import LatentResponse, GMM
+from train_small import train_rep
 
 import omnilearn
 from omnilearn import util

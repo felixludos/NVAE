@@ -10,14 +10,14 @@ hidden-width: 64
 
 lr: 0.001
 
-encoder: none
+#encoder: none
 
 # debug
 
 train-step: 10
 val-step: 10
 
-#batch-size: 16
+batch-size: 16
 
 pbar: yes
 name: 'test'
