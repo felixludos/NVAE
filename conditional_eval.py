@@ -8,10 +8,11 @@ import numpy as np
 import torch
 from torch import nn
 from torch import optim as opt
+from torch import distributions as distrib
 from torch.nn import functional as F
 from torch.utils.tensorboard import SummaryWriter
 
-from plethora.framework.random import Generator
+from plethora.framework.random import Sampler
 
 
 from model import AutoEncoder, Normal
@@ -30,10 +31,135 @@ from plethora.framework import export, load_export
 # _p = os.getenv('PLETHORA_PATH')
 # print(f'loaded conditional_eval {_p} {fm.Rooted._DEFAULT_MASTER_ROOT}')
 
-@fig.Script('gen')
+
+class ModelWrapper(fm.Encoder, fm.Decoder, fm.Sampler):
+	def __init__(self, base, **kwargs):
+		super().__init__(din=base.din, dout=base.dout)
+		self.base = base
+		self.latent_dim = self.base.latent_dim
+
+
+	def encode(self, observation):
+		with torch.no_grad():
+			latent = self.base.encode(observation)
+			if isinstance(latent, distrib.Distribution):
+				latent = latent.mean
+		return latent
+
+
+	def decode(self, latent):
+		with torch.no_grad():
+			reconstruction = self.base.decode(latent)
+		return reconstruction
+
+
+	def _sample(self, shape, gen):
+		prior = torch.randn(*shape, self.latent_dim, generator=gen)
+		return self.decode(prior)
+
+
+
+@fig.AutoComponent('old-model')
+def simple_model(run_name, root=None, device=None):
+	fig.initialize('sae')
+
+	if device is None:
+		device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+	if root is None:
+		root = os.getenv('OMNILEARN_SAVE_DIR', '.')
+	root = Path(root)
+	load_config = fig.get_config(path=run_name, root=str(root), **{'override.device': device})
+	load_config.set_silent(True)
+	run = fig.run('load-run', load_config)
+	# A = run.get_config()
+	# A.set_silent(True)
+	# info = A.pull('info')
+
+	model = run.get_model()
+	model.switch_to('val')
+	model.to(device);
+	return ModelWrapper(model)
+
+
+
+def load_dataset(dname):
+	if dname == 'mnist':
+		dataset = datasets.MNIST(batch_size=256).prepare()
+	elif dname == 'cifar10':
+		dataset = datasets.CIFAR10(batch_size=128).prepare()
+	elif 'celeba' in dname:
+		dataset = datasets.CelebA(resize=64 if '64' in dname else None, batch_size=64).prepare()
+	else:
+		assert False
+	return dataset
+
+
+
+def load_encoder(A, enc_name, dname, cycles=0, device='cuda'):
+	if enc_name == 'flat':
+		encoder = NVAE_Flat(dname=dname, num_dim=None, threshold=None, device=device, auto_cpu=False)
+	else:
+		if enc_name is None:
+			encoder = None
+		else:
+			encoder = simple_model(enc_name, root=A.pull('model-root', None))
+	if encoder is not None and cycles > 0:
+		encoder = ResponseModel(encoder, cycles=cycles)
+		print('Using response model')
+	return encoder
+
+
+
+@fig.Script('task')
 def simple_generation(A):
+	device = A.pull('device', 'cuda' if torch.cuda.is_available() else 'cpu')
+	pbar = tqdm if A.pull('pbar', False) else None
+	extra = A.pull('extra', '')
+
+	dname = A.pull('dataset', 'mnist')
+
+	enc_name = A.pull('encoder', 'flat')
+	cycles = A.pull('cycles', 0)
+
+
+	root = A.pull('root', str(fm.Rooted.get_root()/'tasks'))
+	root = Path(root)
+	if not root.exists():
+		os.makedirs(str(root))
+
+	task_name = f'{dname}_{enc_name}'
+	if cycles > 0:
+		task_name += f'r{cycles}'
+	if len(extra):
+		task_name = f'{task_name}_{extra}'
+
+	dataset = load_dataset(dname)
+
+	encoder = load_encoder(A, enc_name, dname, cycles=cycles, device=device)
+
+	seed = A.pull('seed', 67280421310721)
+
+	other_kwargs = A.pull('task_kwargs', {})
+
+	with fm.using_rng(seed=seed):
+		tasks.PR_GenerationTask
+
+		task = tasks.InferenceTask(dataset=dataset, pbar=pbar, num_samples=1000,
+		                           encoder=encoder, **other_kwargs)
+
+		with torch.no_grad():
+			info = task.compute()
+
+		info['dataset_fingerprint'] = dataset.fingerprint()
+		info['dataset_name'] = dname
+		info['seed'] = seed
+
+	export(info, name=task_name, root=root)
 
 	pass
+
+
 
 @fig.Script('strain')
 def linear_optimize(A):
@@ -66,38 +192,19 @@ def linear_optimize(A):
 	path.mkdir()
 	writer = SummaryWriter(str(path))
 
-	if dname == 'mnist':
-		dataset = datasets.MNIST().prepare()
-		criterion = nn.CrossEntropyLoss()
-		batch_size = 200
-		dout = 10
-	elif dname == 'cifar10':
-		dataset = datasets.CIFAR10().prepare()
-		criterion = nn.CrossEntropyLoss()
-		batch_size = 100
-		dout = 10
-	elif dname == 'celeba_64':
-		dataset = datasets.CelebA(resize=64 if '64' in dname else None).prepare()
+	dataset = load_dataset(dname)
+	dout = dataset.dout.shape[0]
 
+	if 'celeba' in dname:
 		targets = dataset.get_target()
 		sup = targets.sum(0)
-
 		wt = (len(targets) - sup) / sup
 		criterion = nn.BCEWithLogitsLoss(pos_weight=wt.to(device))
-		batch_size = 64
-		dout = 40
 	else:
-		assert False
+		criterion = nn.CrossEntropyLoss()
 
-	if enc_name == 'flat':
-		encoder = NVAE_Flat(dname=dname, num_dim=None, threshold=None, device=device, auto_cpu=False)
-		din = encoder.latent_dim
-	else:
-		encoder = None
-		din = dataset.observation_space.shape.numel()
-	if encoder is not None and cycles > 0:
-		encoder = ResponseModel(encoder, cycles=cycles)
-		print('Using response model')
+	encoder = load_encoder(A, enc_name, dname, cycles=cycles, device=device)
+	din = dataset.observation_space.shape.numel() if encoder is None else encoder.latent_dim
 
 	model_config = A.pull('model', None, raw=True)
 	if model_config is None:
@@ -188,7 +295,7 @@ def linear_optimize(A):
 
 			trainloss = loss.item() if trainloss is None else (eta*loss.item() + (1-eta)*trainloss)
 			status = f'train={trainloss:2.3f}, val={valloss:2.3f}'
-			batch.set_description(status)
+			batch.progress.set_description(status)
 			if i % train_step == 0:
 				writer.add_scalar('loss/train', trainloss, i)
 				writer.flush()
@@ -214,7 +321,7 @@ def linear_optimize(A):
 
 
 
-class NVAE_Wrapper(nn.Module, Generator, fm.abstract.Encoder, fm.abstract.Decoder):
+class NVAE_Wrapper(nn.Module, Sampler, fm.abstract.Encoder, fm.abstract.Decoder):
 	def __init__(self, dname=None, root=None, device='cuda', base_prior=False, auto_cpu=True):
 		super().__init__()
 		# dname = 'mnist'

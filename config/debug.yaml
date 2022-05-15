@@ -1,6 +1,7 @@
 
 
-parents: [d/celeba]
+parents: [d/mnist]
+#parents: [d/celeba]
 #parents: [d/celeba, deep]
 
 
@@ -10,7 +11,9 @@ hidden-width: 64
 
 lr: 0.001
 
-#encoder: none
+#run-name: mnist_vae1_e-conv_d-conv_210910-135535
+
+encoder: mnist_vae1_e-conv_d-conv_210910-135535
 
 # debug
 

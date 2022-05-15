@@ -11,7 +11,7 @@ from torch import optim as opt
 from torch.nn import functional as F
 from torch.utils.tensorboard import SummaryWriter
 
-from plethora.framework.random import Generator
+from plethora.framework.random import Sampler
 
 
 from model import AutoEncoder, Normal
