@@ -4,20 +4,28 @@
 #parents: [d/celeba]
 #parents: [d/celeba, deep]
 
-parents: [t/fid]
+#parents: [t/pr]
+#parents: [t/fid]
+parents: [t/inf]
 
 #ckpt-step: 5
 
-hidden-width: 64
+#dataset: celeba_64
+dataset: mnist
 
+
+#hidden-width: 64
 lr: 0.001
+dim: 64
 
-#dim: 64
+#encoder: none
+#encoder: mnist_vae1_d-conv_210517-010809
 
-#run-name: mnist_vae1_e-conv_d-conv_210910-135535
 
-#encoder: mnist_vae1_e-conv_d-conv_210910-135535
-encoder: mnist_vae1_d-conv_210517-010809
+encoder: mnist_vae1_e-conv_d-conv_210910-135535
+#encoder: celeba_vae1_e-conv_d-conv_d32-b128-ch128_220515-151931
+cycles: 1
+
 
 # debug
 
@@ -27,9 +35,9 @@ val-step: 10
 batch-size: 16
 
 pbar: yes
-name: 'test'
+name: test_{now}
 
-#sample-limit: 1000
+sample-limit: 1000
 
-
+#include-heavy: yes
 

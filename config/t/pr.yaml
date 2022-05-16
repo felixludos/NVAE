@@ -1,0 +1,12 @@
+
+parents: [taskbase]
+
+
+task: pr
+
+dim: 2048
+
+
+
+
+

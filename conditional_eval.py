@@ -33,15 +33,16 @@ from plethora.framework import export, load_export
 
 
 class ModelWrapper(fm.Encoder, fm.Decoder, fm.Sampler):
-	def __init__(self, base, **kwargs):
+	def __init__(self, base, device=None, **kwargs):
 		super().__init__(din=base.din, dout=base.dout)
 		self.base = base
 		self.latent_dim = self.base.latent_dim
+		self.device = device
 
 
 	def encode(self, observation):
 		with torch.no_grad():
-			latent = self.base.encode(observation)
+			latent = self.base.encode(observation.to(self.base.device))
 			if isinstance(latent, distrib.Distribution):
 				latent = latent.mean
 		return latent
@@ -137,6 +138,7 @@ def simple_task(A):
 	mode_ident = A.pull('mode-ident', mode)
 
 	dataset = load_dataset(dname, mode=mode)
+	dataset.batch_size = A.pull('batch-size', dataset.batch_size)
 
 	model = load_encoder(A, enc_name, dname, cycles=cycles, device=device)
 
@@ -162,12 +164,21 @@ def simple_task(A):
 	else:
 		assert False, f'{task_name}'
 
-	run_name = f'{task_name}_{dname}_{enc_name}'
+	now = get_now()
+	run_name = '{task_name}_{dname}_{enc_name}'
 	if cycles > 0:
-		run_name += f'r{cycles}'
+		run_name += 'r{cycles}'
 	if len(extra):
-		run_name = f'{run_name}_{extra}'
+		run_name += '_{extra}'
 	run_name = A.pull('name', run_name)
+	run_name = run_name.format(task_name=task_name, dname=dname, enc_name=enc_name, cycles=cycles, extra=extra,
+		now=now, mode=mode_ident,
+	)
+	info_name = A.pull('info-name', 'info_{mode}').format(task_name=task_name, dname=dname,
+	                                                      enc_name=enc_name, cycles=cycles, extra=extra,
+	                                                      now=now, mode=mode_ident,
+	)
+	print(run_name, info_name)
 
 	path = root / run_name
 	path.mkdir(exist_ok=True)
@@ -185,10 +196,14 @@ def simple_task(A):
 		info['dataset_name'] = dname
 		info['seed'] = seed
 
-	if not A.pull('include-heavy', False):
-		for heavy in task.heavy_results():
-			del info[heavy]
-	
+	if task_name == 'inf' and A.pull('save-estimator', True):
+		estimator = task.estimator
+		# info['estimator'] = estimator
+		if estimator.__class__.__name__ == 'JointEstimator':
+			info['estimator'] = [e.base_estimator for e in estimator]
+		else:
+			info['estimator'] = estimator.base_estimator
+
 	if A.pull('publish-scores', True):
 		writer = SummaryWriter(str(path))
 		for key in task.score_names():
@@ -197,7 +212,8 @@ def simple_task(A):
 			writer.add_scalar(f'score-{task_name}/{mode_ident}', info['score'], global_step=True)
 		writer.close()
 
-	return export(info, name=f'info_{mode_ident}', root=path)
+	results = task.filter_heavy(info) if not A.pull('include-heavy', False) else info
+	return export(results, name=info_name, root=path)
 
 
 

@@ -2,7 +2,7 @@
 parents: [taskbase]
 
 
-task: 'fid'
+task: fid
 
 dim: 2048
 
