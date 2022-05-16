@@ -5,8 +5,8 @@
 #parents: [d/celeba, deep]
 
 #parents: [t/pr]
-#parents: [t/fid]
-parents: [t/inf]
+parents: [t/fid]
+#parents: [t/inf]
 
 #ckpt-step: 5
 
@@ -16,7 +16,7 @@ dataset: mnist
 
 #hidden-width: 64
 lr: 0.001
-dim: 64
+dim: 2048
 
 #encoder: none
 #encoder: mnist_vae1_d-conv_210517-010809
@@ -37,7 +37,7 @@ batch-size: 16
 pbar: yes
 name: test_{now}
 
-sample-limit: 1000
+sample-limit: 100
 
 #include-heavy: yes
 
