@@ -1,9 +1,10 @@
 
 
-parents: [d/mnist]
+#parents: [d/mnist]
 #parents: [d/celeba]
 #parents: [d/celeba, deep]
 
+parents: [t/fid]
 
 #ckpt-step: 5
 
@@ -11,9 +12,12 @@ hidden-width: 64
 
 lr: 0.001
 
+#dim: 64
+
 #run-name: mnist_vae1_e-conv_d-conv_210910-135535
 
-encoder: mnist_vae1_e-conv_d-conv_210910-135535
+#encoder: mnist_vae1_e-conv_d-conv_210910-135535
+encoder: mnist_vae1_d-conv_210517-010809
 
 # debug
 
@@ -25,6 +29,7 @@ batch-size: 16
 pbar: yes
 name: 'test'
 
+#sample-limit: 1000
 
 
 

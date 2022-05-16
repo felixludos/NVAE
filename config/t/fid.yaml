@@ -1,0 +1,12 @@
+
+parents: [taskbase]
+
+
+task: 'fid'
+
+dim: 2048
+
+
+
+
+

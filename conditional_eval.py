@@ -53,9 +53,13 @@ class ModelWrapper(fm.Encoder, fm.Decoder, fm.Sampler):
 		return reconstruction
 
 
-	def _sample(self, shape, gen):
+	def sample_latent(self, *shape, gen=None):
 		prior = torch.randn(*shape, self.latent_dim, generator=gen)
-		return self.decode(prior)
+		return prior.to(self.base.device)
+
+
+	def _sample(self, shape, gen):
+		return self.decode(self.sample_latent(*shape, gen=gen))
 
 
 
@@ -83,13 +87,13 @@ def simple_model(run_name, root=None, device=None):
 
 
 
-def load_dataset(dname):
+def load_dataset(dname, mode='train'):
 	if dname == 'mnist':
-		dataset = datasets.MNIST(batch_size=256).prepare()
+		dataset = datasets.MNIST(batch_size=256, mode=mode).prepare()
 	elif dname == 'cifar10':
-		dataset = datasets.CIFAR10(batch_size=128).prepare()
+		dataset = datasets.CIFAR10(batch_size=128, mode=mode).prepare()
 	elif 'celeba' in dname:
-		dataset = datasets.CelebA(resize=64 if '64' in dname else None, batch_size=64).prepare()
+		dataset = datasets.CelebA(resize=64 if '64' in dname else None, batch_size=64, mode=mode).prepare()
 	else:
 		assert False
 	return dataset
@@ -112,7 +116,7 @@ def load_encoder(A, enc_name, dname, cycles=0, device='cuda'):
 
 
 @fig.Script('task')
-def simple_generation(A):
+def simple_task(A):
 	device = A.pull('device', 'cuda' if torch.cuda.is_available() else 'cpu')
 	pbar = tqdm if A.pull('pbar', False) else None
 	extra = A.pull('extra', '')
@@ -122,42 +126,78 @@ def simple_generation(A):
 	enc_name = A.pull('encoder', 'flat')
 	cycles = A.pull('cycles', 0)
 
+	task_name = A.pull('task', 'fid')
 
 	root = A.pull('root', str(fm.Rooted.get_root()/'tasks'))
 	root = Path(root)
 	if not root.exists():
 		os.makedirs(str(root))
+	
+	mode = A.pull('mode', 'train')
+	mode_ident = A.pull('mode-ident', mode)
 
-	task_name = f'{dname}_{enc_name}'
-	if cycles > 0:
-		task_name += f'r{cycles}'
-	if len(extra):
-		task_name = f'{task_name}_{extra}'
+	dataset = load_dataset(dname, mode=mode)
 
-	dataset = load_dataset(dname)
-
-	encoder = load_encoder(A, enc_name, dname, cycles=cycles, device=device)
+	model = load_encoder(A, enc_name, dname, cycles=cycles, device=device)
 
 	seed = A.pull('seed', 67280421310721)
 
+	
 	other_kwargs = A.pull('task_kwargs', {})
+	
+	num_samples = A.pull('num-samples', '<>sample-limit', 10000)
+	
+	fid_dim = A.pull('inception-dim', 2048)
+	if task_name == 'fid':
+		task_name = f'{task_name}{fid_dim}'
+		task = tasks.FID_GenerationTask(dataset=dataset, pbar=pbar, sample_limit=num_samples,
+		                                generator=model, inception_dim=fid_dim, **other_kwargs)
+	elif task_name == 'pr':
+		task_name = f'{task_name}{fid_dim}'
+		task = tasks.PR_GenerationTask(dataset=dataset, pbar=pbar, sample_limit=num_samples,
+		                                generator=model, inception_dim=fid_dim, **other_kwargs)
+	elif task_name == 'inf':
+		task = tasks.InferenceTask(dataset=dataset, pbar=pbar, sample_limit=num_samples,
+		                           encoder=model, **other_kwargs)
+	else:
+		assert False, f'{task_name}'
 
+	run_name = f'{task_name}_{dname}_{enc_name}'
+	if cycles > 0:
+		run_name += f'r{cycles}'
+	if len(extra):
+		run_name = f'{run_name}_{extra}'
+	run_name = A.pull('name', run_name)
+
+	path = root / run_name
+	path.mkdir(exist_ok=True)
+	
 	with fm.using_rng(seed=seed):
-		tasks.PR_GenerationTask
-
-		task = tasks.InferenceTask(dataset=dataset, pbar=pbar, num_samples=1000,
-		                           encoder=encoder, **other_kwargs)
-
 		with torch.no_grad():
 			info = task.compute()
 
+		if 'score' in info:
+			score = info['score']
+			print(f'Score {run_name}: {score}')
+
+		info['model_name'] = enc_name
 		info['dataset_fingerprint'] = dataset.fingerprint()
 		info['dataset_name'] = dname
 		info['seed'] = seed
 
-	export(info, name=task_name, root=root)
+	if not A.pull('include-heavy', False):
+		for heavy in task.heavy_results():
+			del info[heavy]
+	
+	if A.pull('publish-scores', True):
+		writer = SummaryWriter(str(path))
+		for key in task.score_names():
+			writer.add_scalar(f'{key}/{mode_ident}', info[key], global_step=0)
+		if 'score' in info:
+			writer.add_scalar(f'score-{task_name}/{mode_ident}', info['score'], global_step=True)
+		writer.close()
 
-	pass
+	return export(info, name=f'info_{mode_ident}', root=path)
 
 
 
